@@ -123,7 +123,7 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
   useEffect(() => { nameRef.current?.focus(); }, [initialCode]);
 
   // Busca automática dos dados pelo código de barras (só preenche campos ainda vazios).
-  const [info, setInfo] = useState<{ state: 'idle' | 'busy' | 'found' | 'none' | 'dup' | 'error'; source?: string; imageUrl?: string; avg?: number }>({ state: 'idle' });
+  const [info, setInfo] = useState<{ state: 'idle' | 'busy' | 'found' | 'none' | 'dup' | 'error'; notes?: string[]; source?: string; imageUrl?: string; avg?: number }>({ state: 'idle' });
   const lastLooked = useRef('');
   const lookup = useCallback(async (raw: string) => {
     const code = raw.replace(/\D/g, '');
@@ -131,12 +131,12 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
     lastLooked.current = code;
     setInfo({ state: 'busy' });
     try {
-      const r = await api<{ found: boolean; alreadyRegistered?: boolean; source?: string; name?: string; ncm?: string; imageUrl?: string; avgPriceCents?: number }>(`/barcode-info?code=${code}`);
+      const r = await api<{ found: boolean; alreadyRegistered?: boolean; source?: string; name?: string; ncm?: string; imageUrl?: string; avgPriceCents?: number; notes?: string[] }>(`/barcode-info?code=${code}`);
       if (r.alreadyRegistered) return setInfo({ state: 'dup' });
-      if (!r.found) return setInfo({ state: 'none' });
+      if (!r.found) return setInfo({ state: 'none', notes: r.notes });
       setF((cur) => ({ ...cur, name: cur.name.trim() ? cur.name : (r.name ?? ''), ncm: cur.ncm.trim() ? cur.ncm : (r.ncm ?? '') }));
       setInfo({ state: 'found', source: r.source, imageUrl: r.imageUrl, avg: r.avgPriceCents });
-    } catch { lastLooked.current = ''; setInfo({ state: 'error' }); }
+    } catch (e) { lastLooked.current = ''; setInfo({ state: 'error', notes: [(e as Error).message] }); }
   }, []);
   useEffect(() => { if (initialCode) void lookup(initialCode); }, [initialCode, lookup]);
 
@@ -204,9 +204,9 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
               {info.avg ? ` Preço médio de mercado: ${brl(info.avg)}.` : ''}</span>
           </div>
         )}
-        {info.state === 'none' && <p className="muted small">Produto não encontrado nas bases públicas. Preencha manualmente.</p>}
+        {info.state === 'none' && <p className="muted small">Produto não encontrado nas bases públicas. Preencha manualmente.{info.notes?.length ? ` (${info.notes.join('; ')})` : ''}</p>}
         {info.state === 'dup' && <p className="error">Este código já está cadastrado na sua loja.</p>}
-        {info.state === 'error' && <p className="muted small">Não foi possível consultar agora. Preencha manualmente.</p>}
+        {info.state === 'error' && <p className="muted small">Não foi possível consultar agora. Preencha manualmente. {info.notes?.[0]}</p>}
         {err && <div className="error">{err}</div>}
         <div className="row gap">
           <button className="primary" disabled={busy}>Salvar produto</button>

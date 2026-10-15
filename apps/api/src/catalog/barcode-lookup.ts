@@ -10,6 +10,8 @@ export interface BarcodeInfo {
   ncm?: string;
   imageUrl?: string;
   avgPriceCents?: number;
+  /** Diagnóstico para a tela: por que não achou (token ausente, falha de rede, não consta nas bases). */
+  notes?: string[];
 }
 
 /** Valida tamanho (8, 12, 13 ou 14) e dígito verificador GS1. */

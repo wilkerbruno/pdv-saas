@@ -22,22 +22,24 @@ export class BarcodeLookupService {
 
     let info: BarcodeInfo = { found: false, gtin };
     let transientFail = false;
+    const notes: string[] = [];
 
     const token = process.env.COSMOS_API_TOKEN;
+    if (!token) notes.push('Cosmos não configurado (defina COSMOS_API_TOKEN)');
     if (token) {
       const r = await this.get(`https://api.cosmos.bluesoft.com.br/gtins/${gtin}.json`, { 'X-Cosmos-Token': token, 'User-Agent': 'Cosmos-API-Request' });
       if (r.ok) info = parseCosmos(gtin, r.json);
-      else if (r.status !== 404) transientFail = true;
+      else if (r.status !== 404) { transientFail = true; notes.push(`Cosmos indisponível (${r.status || 'sem conexão'})`); }
     }
     for (const [source, host] of OPEN_HOSTS) {
       if (info.found) break;
       const r = await this.get(`https://${host}/api/v2/product/${gtin}.json?fields=product_name,product_name_pt,brands,quantity,image_front_small_url,image_front_url`, { 'User-Agent': UA });
       if (r.ok) info = parseOpenFacts(gtin, source, r.json);
-      else if (r.status !== 404) transientFail = true;
+      else if (r.status !== 404) { transientFail = true; notes.push(`${host} indisponível (${r.status || 'sem conexão'})`); }
     }
     // Falha de rede não é cacheada como "não existe".
     if (info.found || !transientFail) this.cache.set(gtin, { until: Date.now() + (info.found ? 24 : 1) * 3_600_000, info });
-    return info;
+    return info.found ? info : { ...info, notes };
   }
 
   private async get(url: string, headers: Record<string, string>): Promise<{ ok: boolean; status: number; json?: any }> {
