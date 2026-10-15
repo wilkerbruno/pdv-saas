@@ -7,7 +7,8 @@ import { BarcodeScanner } from './BarcodeScanner';
 interface Category { id: string; name: string }
 interface ProductRow {
   id: string; hasImage?: boolean; name: string; ncm?: string | null; category?: { name: string } | null;
-  variants: (Variant & { minStock?: number })[];
+  variants: (Variant & { minStock?: number; costCents?: number })[];
+  categoryId?: string | null;
 }
 interface Entry { id: number; name: string; added: number; balance: number }
 
@@ -225,6 +226,9 @@ function ProductList() {
   const [items, setItems] = useState<ProductRow[]>([]);
   const [total, setTotal] = useState(0);
   const [err, setErr] = useState('');
+  const [editing, setEditing] = useState<ProductRow | null>(null);
+  const [cats, setCats] = useState<Category[]>([]);
+  useEffect(() => { api<Category[]>('/categories').then(setCats).catch(() => undefined); }, []);
 
   const load = useCallback(async () => {
     try {
@@ -234,6 +238,7 @@ function ProductList() {
   }, [q]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
+  if (editing) return <EditProduct product={editing} cats={cats} onClose={() => { setEditing(null); void load(); }} />;
   return (
     <section className="card">
       <div className="row between"><h2>Produtos cadastrados</h2><span className="muted small">{total} itens</span></div>
@@ -245,6 +250,8 @@ function ProductList() {
           {p.hasImage && <img src={`${BASE}/products/${p.id}/image`} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 8, verticalAlign: 'middle', marginRight: 8 }} />}
           <strong>{p.name}</strong>
           {p.category && <span className="muted small"> · {p.category.name}</span>}
+          {!p.hasImage && <span className="pill"> sem foto</span>}
+          <button className="link" onClick={() => setEditing(p)}>Editar</button>
           {p.variants.map((v) => <VariantRow key={v.id} v={v} onSaved={load} />)}
         </div>
       ))}
@@ -296,5 +303,166 @@ function VariantRow({ v, onSaved }: { v: Variant; onSaved: () => void }) {
       {msg && <span className="muted small">{msg}</span>}
       {err && <span className="error">{err}</span>}
     </div>
+  );
+}
+
+
+// ───────────── Edição de produto ─────────────
+
+/** Reduz a foto no navegador (lado maior 800 px, JPEG) antes de enviar. */
+async function shrinkImage(file: File): Promise<{ mime: string; data: string }> {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 800 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  const url = c.toDataURL('image/jpeg', 0.85);
+  return { mime: 'image/jpeg', data: url.split(',')[1] };
+}
+
+interface VForm { id: string; barcode: string; sku: string; price: string; cost: string; minStock: string; tamanho: string; cor: string; attrs: Record<string, string> }
+
+function EditProduct({ product, cats, onClose }: { product: ProductRow; cats: Category[]; onClose: () => void }) {
+  const [name, setName] = useState(product.name);
+  const [categoryId, setCategoryId] = useState(product.categoryId ?? '');
+  const [ncm, setNcm] = useState(product.ncm ?? '');
+  const [vs, setVs] = useState<VForm[]>(product.variants.map((v) => ({
+    id: v.id, barcode: v.barcode ?? '', sku: v.sku ?? '',
+    price: (v.priceCents / 100).toFixed(2).replace('.', ','), cost: ((v.costCents ?? 0) / 100).toFixed(2).replace('.', ','),
+    minStock: String(v.minStock ?? 0), tamanho: v.attributes?.tamanho ?? '', cor: v.attributes?.cor ?? '', attrs: v.attributes ?? {},
+  })));
+  const [hasImage, setHasImage] = useState(!!product.hasImage);
+  const [imgVer, setImgVer] = useState(0);
+  const [found, setFound] = useState<{ name?: string; ncm?: string; imageUrl?: string; imageToken?: string; source?: string } | null>(null);
+  const [pendingToken, setPendingToken] = useState<string | undefined>();
+  const [removeImg, setRemoveImg] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const setV = (i: number, k: keyof VForm, val: string) => setVs((cur) => cur.map((x, j) => (j === i ? { ...x, [k]: val } : x)));
+
+  const searchData = async () => {
+    setErr(''); setMsg(''); setFound(null);
+    const code = vs.map((v) => v.barcode.replace(/\D/g, '')).find((c) => c.length >= 8);
+    if (!code) return setErr('Informe o código de barras da variação para buscar');
+    setBusy(true);
+    try {
+      const r = await api<{ found: boolean; alreadyRegistered?: boolean; notes?: string[]; name?: string; ncm?: string; imageUrl?: string; imageToken?: string; source?: string }>(`/barcode-info?code=${code}&excludeProductId=${product.id}`);
+      if (r.alreadyRegistered) setErr('Este código já pertence a OUTRO produto da sua loja.');
+      else if (!r.found) setErr(`Não encontrado nas bases públicas.${r.notes?.length ? ' ' + r.notes.join('; ') : ''}`);
+      else setFound(r);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const apply = () => {
+    if (!found) return;
+    if (found.name) setName(found.name);
+    if (found.ncm) setNcm(found.ncm);
+    if (found.imageToken) { setPendingToken(found.imageToken); setRemoveImg(false); }
+    setFound(null); setMsg('Dados aplicados. Clique em Salvar para gravar.');
+  };
+
+  const onFile = async (f?: File) => {
+    if (!f) return;
+    setErr(''); setMsg(''); setBusy(true);
+    try {
+      const img = await shrinkImage(f);
+      await api(`/products/${product.id}/image`, { method: 'POST', body: img });
+      setHasImage(true); setPendingToken(undefined); setRemoveImg(false); setImgVer((n) => n + 1); setMsg('Foto enviada.');
+    } catch (e) { setErr((e as Error).message || 'Não foi possível enviar a foto'); }
+    finally { setBusy(false); }
+  };
+
+  const save = async () => {
+    setErr(''); setMsg('');
+    if (name.trim().length < 2) return setErr('Informe o nome do produto');
+    const rows = [];
+    for (const v of vs) {
+      const price = parseMoney(v.price); const cost = v.cost ? parseMoney(v.cost) : 0;
+      if (price === null || price <= 0) return setErr('Preço inválido');
+      if (cost === null) return setErr('Custo inválido');
+      rows.push({ v, price, cost });
+    }
+    setBusy(true);
+    try {
+      await api(`/products/${product.id}`, { method: 'PATCH', body: {
+        name: name.trim(), ncm: ncm.replace(/\D/g, ''),
+        ...(categoryId ? { categoryId } : {}),
+        ...(pendingToken ? { imageToken: pendingToken } : {}),
+        ...(removeImg ? { removeImage: true } : {}),
+      } });
+      for (const { v, price, cost } of rows) {
+        const attributes: Record<string, string> = { ...v.attrs };
+        if (v.tamanho.trim()) attributes.tamanho = v.tamanho.trim(); else delete attributes.tamanho;
+        if (v.cor.trim()) attributes.cor = v.cor.trim(); else delete attributes.cor;
+        await api(`/variants/${v.id}`, { method: 'PATCH', body: {
+          ...(v.barcode.trim() ? { barcode: v.barcode.trim() } : {}),
+          ...(v.sku.trim() ? { sku: v.sku.trim() } : {}),
+          attributes, priceCents: price, costCents: cost, minStock: Math.max(0, parseInt(v.minStock || '0', 10) || 0),
+        } });
+      }
+      onClose();
+    } catch (e) { setErr((e as Error).message); setBusy(false); }
+  };
+
+  const showImg = hasImage && !removeImg && !pendingToken;
+  return (
+    <section className="card">
+      <div className="row between"><h2>Editar produto</h2><button className="link" onClick={onClose}>← Voltar</button></div>
+      <div className="row gap" style={{ alignItems: 'center' }}>
+        {showImg
+          ? <img src={`${BASE}/products/${product.id}/image?v=${imgVer}`} alt="" style={{ width: 72, height: 72, objectFit: 'contain', borderRadius: 10 }} />
+          : <div className="muted small" style={{ width: 72, height: 72, display: 'grid', placeItems: 'center', border: '1px dashed var(--line)', borderRadius: 10, textAlign: 'center' }}>{pendingToken ? 'Foto nova ao salvar' : 'Sem foto'}</div>}
+        <div className="row gap wrap">
+          <label className="link" style={{ cursor: 'pointer' }}>Enviar foto
+            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+          {(hasImage || pendingToken) && !removeImg && <button className="link" onClick={() => { setRemoveImg(true); setPendingToken(undefined); }}>Remover foto</button>}
+        </div>
+      </div>
+
+      <button onClick={searchData} disabled={busy}>🔎 Buscar dados pelo código de barras</button>
+      {found && (
+        <div className="banner info small">
+          Encontrado ({found.source}): <strong>{found.name}</strong>{found.ncm ? ` · NCM ${found.ncm}` : ''}{found.imageToken ? ' · com foto' : ''}
+          <div className="row gap"><button className="primary" onClick={apply}>Aplicar</button><button onClick={() => setFound(null)}>Ignorar</button></div>
+        </div>
+      )}
+
+      <div className="grid2">
+        <label>Nome *<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label>Categoria
+          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <option value="">Sem categoria</option>
+            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <label>NCM (nota fiscal)<input value={ncm} onChange={(e) => setNcm(e.target.value)} inputMode="numeric" maxLength={10} placeholder="8 dígitos" /></label>
+      </div>
+
+      {vs.map((v, i) => (
+        <fieldset key={v.id} className="prod">
+          <legend className="muted small">{vs.length > 1 ? `Variação ${i + 1}` : 'Dados de venda'}</legend>
+          <div className="grid2">
+            <label>Código de barras<input value={v.barcode} inputMode="numeric" onChange={(e) => setV(i, 'barcode', e.target.value)} /></label>
+            <label>SKU<input value={v.sku} onChange={(e) => setV(i, 'sku', e.target.value)} /></label>
+            <label>Preço de venda (R$)<input inputMode="decimal" value={v.price} onChange={(e) => setV(i, 'price', e.target.value)} /></label>
+            <label>Custo (R$)<input inputMode="decimal" value={v.cost} onChange={(e) => setV(i, 'cost', e.target.value)} /></label>
+            <label>Estoque mínimo<input type="number" min={0} value={v.minStock} onChange={(e) => setV(i, 'minStock', e.target.value)} /></label>
+            <label>Tamanho<input value={v.tamanho} onChange={(e) => setV(i, 'tamanho', e.target.value)} /></label>
+            <label>Cor<input value={v.cor} onChange={(e) => setV(i, 'cor', e.target.value)} /></label>
+          </div>
+        </fieldset>
+      ))}
+      <p className="muted small">A quantidade em estoque é ajustada na lista (campos Estoque e Somar).</p>
+      {msg && <div className="banner info small">{msg}</div>}
+      {err && <div className="error">{err}</div>}
+      <div className="row gap">
+        <button className="primary" disabled={busy} onClick={save}>Salvar alterações</button>
+        <button onClick={onClose}>Cancelar</button>
+      </div>
+    </section>
   );
 }

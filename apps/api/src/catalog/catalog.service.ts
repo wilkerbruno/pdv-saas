@@ -1,6 +1,7 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService, Tx } from '../prisma/prisma.service';
 import { BarcodeLookupService } from './barcode-lookup.service';
+import { checkImage } from './barcode-lookup';
 import { CreateCategoryDto, CreateProductDto, UpdateProductDto, UpdateVariantDto, VariantDto } from './catalog.dto';
 
 @Injectable()
@@ -88,7 +89,35 @@ export class CatalogService {
 
   async updateProduct(tenantId: string, id: string, dto: UpdateProductDto) {
     await this.getProduct(tenantId, id);
-    return this.prisma.product.update({ where: { id }, data: dto });
+    const { imageToken, removeImage, ...data } = dto;
+    const image = this.barcodes.takeImage(tenantId, imageToken);
+    return this.prisma.$transaction(async (tx: Tx) => {
+      if (image) {
+        await tx.productImage.upsert({
+          where: { productId: id },
+          create: { productId: id, mime: image.mime, data: image.data },
+          update: { mime: image.mime, data: image.data },
+        });
+        (data as any).hasImage = true;
+      } else if (removeImage) {
+        await tx.productImage.deleteMany({ where: { productId: id } });
+        (data as any).hasImage = false;
+      }
+      return tx.product.update({ where: { id }, data });
+    });
+  }
+
+  /** Envio manual de foto (o navegador já reduz a imagem). */
+  async setImage(tenantId: string, id: string, mime: string, base64: string) {
+    await this.getProduct(tenantId, id);
+    const data = Buffer.from(base64, 'base64');
+    const okMime = checkImage(mime, data);
+    if (!okMime) throw new BadRequestException('Imagem inválida: use JPG, PNG, WEBP ou GIF de até 1,5 MB');
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.productImage.upsert({ where: { productId: id }, create: { productId: id, mime: okMime, data }, update: { mime: okMime, data } });
+      await tx.product.update({ where: { id }, data: { hasImage: true } });
+    });
+    return { ok: true };
   }
 
   async addVariant(tenantId: string, productId: string, dto: VariantDto) {

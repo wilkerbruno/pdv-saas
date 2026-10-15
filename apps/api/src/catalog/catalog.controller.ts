@@ -3,7 +3,7 @@ import { CurrentUser, Public, Roles } from '../common/decorators';
 import { AuthUser } from '../common/types';
 import { CatalogService } from './catalog.service';
 import { BarcodeLookupService } from './barcode-lookup.service';
-import { CreateCategoryDto, CreateProductDto, UpdateProductDto, UpdateVariantDto, VariantDto } from './catalog.dto';
+import { CreateCategoryDto, CreateProductDto, UpdateProductDto, UpdateVariantDto, UploadImageDto, VariantDto } from './catalog.dto';
 
 @Controller()
 export class CatalogController {
@@ -20,9 +20,9 @@ export class CatalogController {
 
   /** Dados públicos do produto pelo código de barras, para pré-preencher o cadastro (o usuário confere antes de salvar). */
   @Roles('OWNER', 'MANAGER') @Get('barcode-info')
-  async barcodeInfo(@CurrentUser() u: AuthUser, @Query('code') code = '') {
+  async barcodeInfo(@CurrentUser() u: AuthUser, @Query('code') code = '', @Query('excludeProductId') excludeProductId?: string) {
     const gtin = code.replace(/\D/g, '');
-    const exists = gtin ? await this.catalog.lookup(u.tenantId, gtin).then(() => true, () => false) : false;
+    const exists = gtin ? await this.catalog.lookup(u.tenantId, gtin).then((v: any) => v.product.id !== excludeProductId, () => false) : false;
     if (exists) return { found: false, gtin, alreadyRegistered: true };
     const info = await this.barcodes.lookup(gtin);
     if (!info.found || !info.imageUrl) return info;
@@ -55,6 +55,11 @@ export class CatalogController {
   @Roles('OWNER', 'MANAGER') @Post('products')
   create(@CurrentUser() u: AuthUser, @Body() dto: CreateProductDto) {
     return this.catalog.createProduct(u.tenantId, dto);
+  }
+
+  @Roles('OWNER', 'MANAGER') @Post('products/:id/image')
+  setImage(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: UploadImageDto) {
+    return this.catalog.setImage(u.tenantId, id, dto.mime, dto.data);
   }
 
   @Roles('OWNER', 'MANAGER') @Patch('products/:id')

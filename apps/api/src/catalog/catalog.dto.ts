@@ -34,7 +34,17 @@ export class UpdateProductDto {
   @IsOptional() @IsString() ncm?: string;
   @IsOptional() @IsString() cfop?: string;
   @IsOptional() @IsString() taxCode?: string;
+  @IsOptional() @IsString() cest?: string;
   @IsOptional() @IsBoolean() active?: boolean;
+  /** Token de GET /barcode-info: troca a foto pela encontrada na busca. */
+  @IsOptional() @IsString() imageToken?: string;
+  @IsOptional() @IsBoolean() removeImage?: boolean;
+}
+
+export class UploadImageDto {
+  @IsString() mime: string;
+  /** Imagem em base64 (sem o prefixo data:). */
+  @IsString() data: string;
 }
 
 export class UpdateVariantDto {
