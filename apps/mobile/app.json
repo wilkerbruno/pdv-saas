@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "PDV",
+    "slug": "pdv-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": { "bundleIdentifier": "br.com.divisionstech.pdv", "infoPlist": { "NSCameraUsageDescription": "Usamos a câmera para ler o código de barras dos produtos." } },
+    "android": { "package": "br.com.divisionstech.pdv", "permissions": ["CAMERA"] },
+    "plugins": ["expo-secure-store", "expo-camera"]
+  }
+}

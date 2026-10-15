@@ -1,0 +1,52 @@
+# Desenvolvimento local / base para o EasyPanel (cada serviço pode virar um app separado lá).
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: pdv
+      MYSQL_USER: pdv
+      MYSQL_PASSWORD: pdv
+      MYSQL_ROOT_PASSWORD: root
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--default-time-zone=+00:00"]
+    ports: ["3306:3306"]
+    volumes: ["db_data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: mysql://pdv:pdv@db:3306/pdv
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET (openssl rand -hex 32)}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY (openssl rand -hex 32)}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3000}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
+      MP_CLIENT_ID: ${MP_CLIENT_ID:-}
+      MP_CLIENT_SECRET: ${MP_CLIENT_SECRET:-}
+      MP_REDIRECT_URI: ${MP_REDIRECT_URI:-}
+      MP_OAUTH_PKCE: ${MP_OAUTH_PKCE:-true}
+      PLATFORM_MP_ACCESS_TOKEN: ${PLATFORM_MP_ACCESS_TOKEN:-}
+      BILLING_MP_WEBHOOK_SECRET: ${BILLING_MP_WEBHOOK_SECRET:-}
+      WEB_URL: ${WEB_URL:-http://localhost:8080}
+      SEED_DEMO: ${SEED_DEMO:-0}
+    ports: ["3000:3000"]
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:3000}
+    restart: unless-stopped
+    depends_on: [api]
+    ports: ["8080:80"]
+
+volumes:
+  db_data:

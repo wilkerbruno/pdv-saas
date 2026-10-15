@@ -1,0 +1,459 @@
+// PDV SaaS — schema multi-tenant (MySQL 8)
+// Valores monetários sempre em CENTAVOS (Int). Taxas em pontos-base (bps) ao mês: 199 = 1,99%.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── SaaS: planos e tenants ─────────────────────────
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELED
+}
+
+model Plan {
+  id               String   @id @default(cuid())
+  code             String   @unique // basic | pro | multi
+  name             String
+  priceCents       Int
+  maxCashRegisters Int      @default(1)
+  maxStores        Int      @default(1)
+  fiscalEnabled    Boolean  @default(false)
+  integratedPos    Boolean  @default(false) // maquininha integrada
+  active           Boolean  @default(true)
+  tenants          Tenant[]
+}
+
+model Tenant {
+  id                  String       @id @default(cuid())
+  name                String
+  document            String? // CNPJ/CPF
+  email               String
+  status              TenantStatus @default(TRIAL)
+  planId              String
+  plan                Plan         @relation(fields: [planId], references: [id])
+  trialEndsAt         DateTime?
+  currentPeriodEnd    DateTime? // fim do período já pago
+  billingGateway      String? // mercadopago | pagarme
+  billingRef          String? // id da assinatura no gateway
+  fiscalEnabled       Boolean      @default(false)
+  allowNegativeStock  Boolean      @default(false)
+  saleSeq             Int          @default(0)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  users             User[]
+  stores            Store[]
+  categories        Category[]
+  products          Product[]
+  variants          ProductVariant[]
+  customers         Customer[]
+  sales             Sale[]
+  cashSessions      CashSession[]
+  integrations      PaymentIntegration[]
+  installmentPolicy InstallmentPolicy?
+  stockMovements    StockMovement[]
+  fiscalSettings    FiscalSettings?
+  fiscalDocuments   FiscalDocument[]
+  billingInvoices   BillingInvoice[]
+  oauthStates       OAuthState[]
+}
+
+enum Role {
+  OWNER
+  MANAGER
+  CASHIER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(CASHIER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  cashSessions CashSession[]
+  sales        Sale[]
+
+  @@index([tenantId])
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  cnpj      String?
+  address   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  cashSessions CashSession[]
+  sales        Sale[]
+
+  @@index([tenantId])
+}
+
+// ───────────────────────── Catálogo e estoque ─────────────────────────
+
+model Category {
+  id       String    @id @default(cuid())
+  tenantId String
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  name     String
+  products Product[]
+
+  @@unique([tenantId, name])
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  name        String
+  description String?   @db.Text
+  unit        String    @default("UN")
+  // Dados fiscais (usados quando o módulo fiscal está ligado)
+  ncm         String?
+  cfop        String?
+  cest        String?
+  origin      Int       @default(0)
+  taxCode     String? // CSOSN/CST
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  variants ProductVariant[]
+
+  @@index([tenantId, name])
+}
+
+// Variação (grade): tamanho/cor/modelo. Todo produto tem ao menos 1 variação.
+model ProductVariant {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku        String?
+  barcode    String?
+  attributes Json? // {"tamanho":"M","cor":"Azul"}
+  priceCents Int
+  costCents  Int      @default(0)
+  stockQty   Int      @default(0)
+  minStock   Int      @default(0)
+  active     Boolean  @default(true)
+
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
+
+  @@unique([tenantId, barcode])
+  @@unique([tenantId, sku])
+  @@index([tenantId, productId])
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUST
+  SALE
+  RETURN
+}
+
+model StockMovement {
+  id        String            @id @default(cuid())
+  tenantId  String
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  variantId String
+  variant   ProductVariant    @relation(fields: [variantId], references: [id])
+  type      StockMovementType
+  qty       Int // sempre positivo; o sinal vem do tipo
+  balance   Int // saldo após a movimentação
+  reason    String?
+  saleId    String?
+  createdAt DateTime          @default(now())
+
+  @@index([tenantId, variantId])
+}
+
+model Customer {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+  name               String
+  phone              String? // WhatsApp
+  document           String?
+  email              String?
+  creditBalanceCents Int      @default(0) // vale-troca
+  createdAt          DateTime @default(now())
+
+  sales Sale[]
+
+  @@index([tenantId, name])
+}
+
+// ───────────────────────── Caixa ─────────────────────────
+
+enum CashMovementType {
+  SANGRIA
+  SUPRIMENTO
+}
+
+model CashSession {
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  storeId      String
+  store        Store     @relation(fields: [storeId], references: [id])
+  openedById   String
+  openedBy     User      @relation(fields: [openedById], references: [id])
+  openedAt     DateTime  @default(now())
+  openingCents Int       @default(0)
+  closedAt     DateTime?
+  countedCents Int? // informado no fechamento
+  expectedCents Int? // calculado no fechamento
+
+  movements CashMovement[]
+  sales     Sale[]
+
+  @@index([tenantId, storeId, closedAt])
+}
+
+model CashMovement {
+  id            String           @id @default(cuid())
+  cashSessionId String
+  cashSession   CashSession      @relation(fields: [cashSessionId], references: [id])
+  type          CashMovementType
+  amountCents   Int
+  note          String?
+  createdAt     DateTime         @default(now())
+}
+
+// ───────────────────────── Vendas e pagamentos ─────────────────────────
+
+enum SaleStatus {
+  PENDING // aguardando pagamentos integrados
+  PAID
+  CANCELED
+}
+
+model Sale {
+  id            String      @id @default(cuid())
+  tenantId      String
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  storeId       String
+  store         Store       @relation(fields: [storeId], references: [id])
+  cashSessionId String
+  cashSession   CashSession @relation(fields: [cashSessionId], references: [id])
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  customerId    String?
+  customer      Customer?   @relation(fields: [customerId], references: [id])
+  number        Int
+  status        SaleStatus  @default(PENDING)
+  subtotalCents Int
+  discountCents Int         @default(0)
+  interestCents Int         @default(0) // juros de parcelamento pagos pelo cliente
+  totalCents    Int
+  createdAt     DateTime    @default(now())
+  paidAt        DateTime?
+  consumerDocument String? // CPF/CNPJ informado para constar na nota fiscal
+
+  items    SaleItem[]
+  payments Payment[]
+  fiscalDocument FiscalDocument?
+
+  @@unique([tenantId, number])
+  @@index([tenantId, createdAt])
+}
+
+model SaleItem {
+  id             String         @id @default(cuid())
+  saleId         String
+  sale           Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  variantId      String
+  variant        ProductVariant @relation(fields: [variantId], references: [id])
+  description    String // snapshot do nome (produto + atributos)
+  qty            Int
+  unitPriceCents Int
+  discountCents  Int            @default(0)
+  totalCents     Int
+}
+
+enum PaymentMethod {
+  CASH
+  PIX
+  DEBIT
+  CREDIT
+  STORE_CREDIT
+}
+
+enum PaymentProviderCode {
+  MANUAL // operador confirma que recebeu (maquininha sem API, dinheiro...)
+  MERCADOPAGO_POINT
+  MERCADOPAGO_PIX
+  PAGARME_STONE
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELED
+}
+
+model Payment {
+  id             String              @id @default(cuid())
+  tenantId       String
+  saleId         String
+  sale           Sale                @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  method         PaymentMethod
+  provider       PaymentProviderCode @default(MANUAL)
+  status         PaymentStatus       @default(PENDING)
+  installments   Int                 @default(1)
+  principalCents Int // parte que abate a venda
+  interestCents  Int                 @default(0) // juros embutidos
+  totalCents     Int // valor efetivamente cobrado (principal + juros)
+  brand          String?
+  externalId     String? // id da order/payment no gateway
+  pixCopyPaste   String?             @db.Text
+  pixQrBase64    String?             @db.MediumText
+  raw            Json?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([externalId])
+  @@index([saleId])
+}
+
+// Conexão de cada loja com um adquirente (OAuth/tokens por tenant)
+model PaymentIntegration {
+  id           String              @id @default(cuid())
+  tenantId     String
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
+  provider     PaymentProviderCode
+  accessToken  String              @db.Text // guardado criptografado (AES-256-GCM)
+  refreshToken String?             @db.Text // guardado criptografado
+  expiresAt    DateTime? // validade do access token (OAuth)
+  scope        String?
+  accountRef   String? // user_id no Mercado Pago, etc.
+  deviceId     String? // terminal padrão (Point)
+  active       Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+
+  @@unique([tenantId, provider])
+}
+
+// Política de parcelamento da loja
+model InstallmentPolicy {
+  id                 String  @id @default(cuid())
+  tenantId           String  @unique
+  tenant             Tenant  @relation(fields: [tenantId], references: [id])
+  maxInstallments    Int     @default(12)
+  freeInstallments   Int     @default(1) // até N parcelas sem juros ao cliente
+  monthlyRateBps     Int     @default(199) // juros ao mês cobrados do cliente acima de freeInstallments
+  minInstallmentCents Int    @default(500)
+  customerPaysInterest Boolean @default(true)
+}
+
+// ───────────────────────── OAuth (Mercado Pago) ─────────────────────────
+
+// Estado de uma autorização em andamento (uso único, expira em 10 min). Guarda o verificador PKCE no servidor.
+model OAuthState {
+  id           String   @id // o próprio "state" enviado ao Mercado Pago
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  codeVerifier String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([expiresAt])
+}
+
+// ───────────────────────── Fiscal (NFC-e) ─────────────────────────
+
+enum FiscalStatus {
+  PROCESSING
+  AUTHORIZED
+  REJECTED // recusada pela SEFAZ ou por validação local; corrija e reenvie
+  DENIED
+  CANCELED
+  ERROR // falha de comunicação com o provedor; reenviar
+}
+
+// Configuração fiscal da loja. O liga/desliga fica em Tenant.fiscalEnabled (e depende do plano).
+model FiscalSettings {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  provider       String   @default("FOCUSNFE")
+  environment    String   @default("HOMOLOGACAO") // HOMOLOGACAO | PRODUCAO
+  providerToken  String?  @db.Text // token da empresa no provedor (criptografado)
+  cnpj           String? // CNPJ do emitente (14 dígitos)
+  defaultCfop    String   @default("5102")
+  defaultTaxCode String   @default("102") // CSOSN (Simples Nacional)
+  autoEmit       Boolean  @default(true) // emite sozinho quando a venda é paga
+  updatedAt      DateTime @updatedAt
+}
+
+model FiscalDocument {
+  id           String       @id @default(cuid())
+  tenantId     String
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  saleId       String       @unique
+  sale         Sale         @relation(fields: [saleId], references: [id])
+  ref          String       @unique // referência enviada ao provedor
+  type         String       @default("NFCE")
+  environment  String
+  status       FiscalStatus @default(PROCESSING)
+  number       String?
+  series       String?
+  accessKey    String?
+  danfeUrl     String?      @db.Text
+  xmlUrl       String?      @db.Text
+  qrCodeUrl    String?      @db.Text
+  consultUrl   String?      @db.Text
+  sefazStatus  String?
+  message      String?      @db.Text
+  cancelReason String?
+  cancelXmlUrl String?      @db.Text
+  raw          Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([tenantId, status])
+}
+
+/// Cobrança da mensalidade do SaaS (PIX gerado na conta Mercado Pago da plataforma).
+model BillingInvoice {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planCode      String
+  amountCents   Int
+  status        String    @default("PENDING") // PENDING | PAID | EXPIRED
+  externalId    String?   @unique // id do pagamento no Mercado Pago
+  pixCopyPaste  String?   @db.Text
+  pixQrBase64   String?   @db.LongText
+  expiresAt     DateTime
+  paidAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([tenantId, status])
+}
