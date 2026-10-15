@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { BarcodeInfo, isValidGtin, parseCosmos, parseOpenFacts } from './barcode-lookup';
+import { BarcodeInfo, isValidGtin, parseCosmos, parseOpenFacts, parseSi5, parseUpcItemDb } from './barcode-lookup';
 
 const UA = 'PDV-SaaS/1.0 (cadastro de produtos)';
 const OPEN_HOSTS: [NonNullable<BarcodeInfo['source']>, string][] = [
@@ -13,7 +13,7 @@ export class BarcodeLookupService {
   private log = new Logger(BarcodeLookupService.name);
   private cache = new Map<string, { until: number; info: BarcodeInfo }>();
 
-  /** Fontes: Cosmos Bluesoft (precisa de COSMOS_API_TOKEN; melhor base de GTIN do Brasil, traz NCM) e Open *Facts (grátis). */
+  /** Fontes, em ordem: Cosmos (COSMOS_API_TOKEN, pago), SI5 Global (SI5_API_TOKEN, grátis 100/dia, traz NCM), Open *Facts e UPCitemdb (sem chave). */
   async lookup(rawCode: string): Promise<BarcodeInfo> {
     const gtin = rawCode.replace(/\D/g, '');
     if (!isValidGtin(gtin)) return { found: false, gtin };
@@ -31,11 +31,23 @@ export class BarcodeLookupService {
       if (r.ok) info = parseCosmos(gtin, r.json);
       else if (r.status !== 404) { transientFail = true; notes.push(`Cosmos indisponível (${r.status || 'sem conexão'})`); }
     }
+    const si5 = process.env.SI5_API_TOKEN;
+    if (!info.found && si5) {
+      const r = await this.get(`https://global.si5.com.br/api/produtos/${gtin}`, { Authorization: `Bearer ${si5}`, 'User-Agent': UA });
+      if (r.ok) info = parseSi5(gtin, r.json);
+      else if (r.status !== 404) { transientFail = true; notes.push(r.status === 429 ? 'SI5: limite diário de consultas atingido' : r.status === 401 ? 'SI5: token inválido' : `SI5 indisponível (${r.status || 'sem conexão'})`); }
+    }
+    if (!token && !si5) notes.push('Dica: configure SI5_API_TOKEN (grátis, 100 consultas/dia) para achar produtos brasileiros');
     for (const [source, host] of OPEN_HOSTS) {
       if (info.found) break;
       const r = await this.get(`https://${host}/api/v2/product/${gtin}.json?fields=product_name,product_name_pt,brands,quantity,image_front_small_url,image_front_url`, { 'User-Agent': UA });
       if (r.ok) info = parseOpenFacts(gtin, source, r.json);
       else if (r.status !== 404) { transientFail = true; notes.push(`${host} indisponível (${r.status || 'sem conexão'})`); }
+    }
+    if (!info.found) {
+      const r = await this.get(`https://api.upcitemdb.com/prod/trial/lookup?upc=${gtin}`, { Accept: 'application/json', 'User-Agent': UA });
+      if (r.ok) info = parseUpcItemDb(gtin, r.json);
+      else if (r.status !== 404) { transientFail = true; notes.push(r.status === 429 ? 'UPCitemdb: limite atingido' : `UPCitemdb indisponível (${r.status || 'sem conexão'})`); }
     }
     // Falha de rede não é cacheada como "não existe".
     if (info.found || !transientFail) this.cache.set(gtin, { until: Date.now() + (info.found ? 24 : 1) * 3_600_000, info });

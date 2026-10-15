@@ -108,3 +108,5 @@ Após atualizar, aplique o schema (nova tabela `AdminAction`): `npx prisma db pu
 ## Cadastro de produto por código de barras
 
 Ao digitar/bipar um código que ainda não existe na loja, a tela de novo produto consulta bases públicas e preenche nome e NCM (só campos vazios; o lojista confere antes de salvar). Fontes, em ordem: **Cosmos Bluesoft** (defina `COSMOS_API_TOKEN`; melhor cobertura de produtos brasileiros e traz NCM) e **Open Food Facts / Beauty / Products Facts** (grátis, sem chave, mais forte em alimentos e cosméticos). O código é validado (dígito verificador GS1) antes de consultar; resultados ficam em cache por 24 h e falhas de rede não são guardadas como "não existe". Se nenhuma fonte confirmar, nada é inventado: o cadastro segue manual.
+
+**Alternativa gratuita:** defina `SI5_API_TOKEN` (conta grátis em global.si5.com.br, login com Google, 100 consultas/dia, devolve nome, marca, NCM e CEST). Como último recurso o sistema também consulta o UPCitemdb (sem chave, 100/dia, cobertura internacional). Cada código consultado fica em cache por 24 h, então o limite diário rende bastante.

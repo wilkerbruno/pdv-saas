@@ -200,7 +200,7 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
         {info.state === 'found' && (
           <div className="row gap small" style={{ alignItems: 'center' }}>
             {info.imageUrl && <img src={info.imageUrl} alt="" style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 8 }} />}
-            <span className="muted">Dados preenchidos automaticamente ({info.source === 'cosmos' ? 'Cosmos' : 'Open Food Facts'}). Confira nome e NCM antes de salvar.
+            <span className="muted">Dados preenchidos automaticamente ({({ cosmos: 'Cosmos', si5: 'SI5 Global', upcitemdb: 'UPCitemdb' } as Record<string, string>)[info.source ?? ''] ?? 'Open Food Facts'}). Confira nome e NCM antes de salvar.
               {info.avg ? ` Preço médio de mercado: ${brl(info.avg)}.` : ''}</span>
           </div>
         )}
