@@ -13,6 +13,7 @@ export function App() {
   const [loading, setLoading] = useState(hasToken());
   const [view, setView] = useState<'pdv' | 'products' | 'reports' | 'settings'>('pdv');
   const [flash, setFlash] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [cash, setCash] = useState<{ session: { id: string; storeId: string } | null; balance?: { expectedCents: number } } | null>(null);
 
   const load = useCallback(async () => {
@@ -59,24 +60,27 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <strong>{me.tenant.name}</strong>
-        <span className="muted small">
-          {me.user.name} · {me.tenant.plan.name}
-        </span>
-        <nav className="tabs">
-          <button className={view === 'pdv' ? 'tab on' : 'tab'} onClick={() => setView('pdv')}>Vender</button>
-          {me.user.role !== 'CASHIER' && (
-            <>
-              <button className={view === 'products' ? 'tab on' : 'tab'} onClick={() => setView('products')}>Produtos</button>
-              <button className={view === 'reports' ? 'tab on' : 'tab'} onClick={() => setView('reports')}>Relatórios</button>
-              <button className={view === 'settings' ? 'tab on' : 'tab'} onClick={() => setView('settings')}>Configurações</button>
-            </>
-          )}
-        </nav>
-        <button className="link" onClick={logout}>
-          Sair
+        <button className="burger" aria-label="Abrir menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+          <span /><span /><span />
         </button>
+        <strong className="brand">{me.tenant.name}</strong>
+        <span className="muted small who">{me.user.name} · {me.tenant.plan.name}</span>
+        <nav className={menuOpen ? 'tabs open' : 'tabs'}>
+          {[
+            ['pdv', 'Vender', true],
+            ['products', 'Produtos', me.user.role !== 'CASHIER'],
+            ['reports', 'Relatórios', me.user.role !== 'CASHIER'],
+            ['settings', 'Configurações', me.user.role !== 'CASHIER'],
+          ].filter(([, , show]) => show).map(([id, label]) => (
+            <button key={id as string} className={view === id ? 'tab on' : 'tab'}
+              onClick={() => { setView(id as typeof view); setMenuOpen(false); }}>{label as string}</button>
+          ))}
+          <div className="menu-user muted small">{me.user.name} · {me.tenant.plan.name}</div>
+          <button className="tab menu-logout" onClick={logout}>Sair</button>
+        </nav>
+        <button className="link desk-logout" onClick={logout}>Sair</button>
       </header>
+      {menuOpen && <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />}
       {flash && <div className={flash.startsWith('Não') ? 'banner warn' : 'banner info'} onClick={() => setFlash('')}>{flash}</div>}
       {me.tenant.status === 'TRIAL' && me.tenant.trialEndsAt && (
         <div className="banner info">Teste grátis até {new Date(me.tenant.trialEndsAt).toLocaleDateString('pt-BR')}.</div>

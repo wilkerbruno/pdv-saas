@@ -96,7 +96,7 @@ export function Pdv({ me, cash, reloadCash, readOnly }: Props) {
             ref={input}
             autoFocus
             className="search"
-            placeholder="Bipe o código de barras ou busque pelo nome"
+            placeholder="Bipe o código ou busque pelo nome"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />

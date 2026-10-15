@@ -74,7 +74,7 @@ function QuickEntry() {
       <section className="card">
         <h2>Entrada rápida por código de barras</h2>
         <p className="muted small">Bipe o produto: se já estiver cadastrado, soma ao estoque (1 por bipe, ou a quantidade digitada ao lado). Se for novo, abre o cadastro.</p>
-        <form className="row gap" onSubmit={submit}>
+        <form className="row gap qeform" onSubmit={submit}>
           <input ref={input} autoFocus className="search" placeholder="Código de barras ou SKU" value={code} onChange={(e) => setCode(e.target.value)} disabled={newCode !== null} />
           <label className="qtybox">Qtd.
             <input type="number" min={1} inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} disabled={newCode !== null} />

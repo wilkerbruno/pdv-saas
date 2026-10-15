@@ -48,9 +48,10 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 @media print { body * { visibility: hidden; } .receipt, .receipt * { visibility: visible; } .receipt { position: fixed; inset: 0; background: #fff; color: #000; } }
 
 .tabs { display: flex; gap: 4px; margin-left: 16px; }
+.burger, .menu-user, .menu-logout, .menu-backdrop { display: none; }
 .tab { border: 0; background: none; padding: 6px 12px; border-radius: 8px; color: var(--muted); }
 .tab.on { background: var(--bg); color: var(--text); font-weight: 600; }
-.topbar .link:last-child { margin-left: auto; }
+.topbar .desk-logout { margin-left: auto; }
 .settings { display: grid; gap: 16px; padding: 16px; max-width: 760px; width: 100%; margin: 0 auto; }
 .settings h2 { margin: 0; font-size: 18px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
@@ -73,3 +74,31 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .scanner video { flex: 1; width: 100%; object-fit: cover; min-height: 0; }
 .scan-frame { position: absolute; left: 10%; right: 10%; top: 30%; height: 28%; border: 3px solid #fff; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0,0,0,.35); pointer-events: none; }
 .scan-bar { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 14px 16px; background: #111; color: #fff; font-size: 15px; }
+
+/* ───────── Celular: menu hambúrguer e layout sem rolagem lateral ───────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { max-width: 100%; overflow-x: hidden; }
+.pdv > *, .settings > *, .card, .panel { min-width: 0; }
+input, select, textarea, button { max-width: 100%; }
+.search { min-width: 0; flex: 1; }
+.topbar .brand { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 800px) {
+  .topbar { position: sticky; top: 0; z-index: 40; padding: 10px 12px; gap: 10px; }
+  .topbar .who, .topbar .desk-logout { display: none; }
+  .topbar .brand { flex: 1; }
+  .burger { display: flex; flex-direction: column; justify-content: center; gap: 5px; width: 42px; height: 42px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .burger span { display: block; height: 2px; background: var(--text); border-radius: 2px; }
+  .tabs { display: none; position: absolute; top: 100%; left: 0; right: 0; margin: 0; padding: 8px 12px 12px; flex-direction: column; gap: 4px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 12px 24px rgba(0,0,0,.18); z-index: 45; }
+  .tabs.open { display: flex; }
+  .tabs .tab { text-align: left; padding: 14px 12px; font-size: 17px; width: 100%; }
+  .menu-user { display: block; padding: 8px 12px; border-top: 1px solid var(--line); margin-top: 4px; }
+  .menu-logout { display: block; color: var(--danger); }
+  .menu-backdrop { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(0,0,0,.35); }
+  .banner { padding: 10px 12px; }
+  .settings { padding: 12px; }
+  .vrow { gap: 6px; } .vrow .qtybox input { width: 76px; }
+  .lines li { gap: 8px; }
+}
+
+@media (max-width: 800px) { .qeform { flex-wrap: wrap; } .qeform .search { flex: 1 1 100%; } .qeform .qtybox { flex: 0 0 90px; } .qeform .primary { flex: 1; min-height: 44px; } }
+.pill { white-space: nowrap; flex-shrink: 0; }
