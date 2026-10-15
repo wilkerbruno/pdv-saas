@@ -3,6 +3,7 @@ import { api } from './api';
 import { brl, parseMoney } from './money';
 import { CartLine, describeVariant, FiscalDoc, Me, Sale, Variant } from './types';
 import { PaymentFlow } from './PaymentFlow';
+import { BarcodeScanner } from './BarcodeScanner';
 
 interface Props {
   me: Me;
@@ -20,6 +21,7 @@ export function Pdv({ me, cash, reloadCash, readOnly }: Props) {
   const [done, setDone] = useState<{ sale: Sale; receipt: string } | null>(null);
   const [msg, setMsg] = useState('');
   const [showCash, setShowCash] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   const subtotal = cart.reduce((s, l) => s + l.variant.priceCents * l.qty, 0);
@@ -64,6 +66,17 @@ export function Pdv({ me, cash, reloadCash, readOnly }: Props) {
     input.current?.focus();
   };
 
+  // Leitura pela câmera: cada código lido soma 1 no carrinho (a câmera continua aberta).
+  const onCamera = async (code: string) => {
+    try {
+      const v = await api<Variant>(`/variants/lookup?code=${encodeURIComponent(code)}`);
+      add(v);
+      return `+1 ${describeVariant(v)}`;
+    } catch {
+      return `Código ${code} não cadastrado`;
+    }
+  };
+
   const setQty = (id: string, qty: number) =>
     setCart((c) => (qty <= 0 ? c.filter((l) => l.variant.id !== id) : c.map((l) => (l.variant.id === id ? { ...l, qty } : l))));
 
@@ -88,6 +101,7 @@ export function Pdv({ me, cash, reloadCash, readOnly }: Props) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </form>
+        <button className="cam" onClick={() => setScanning(true)}>📷 Ler com a câmera</button>
         {msg && <div className="error">{msg}</div>}
         <ul className="results">
           {results.map((v) => (
@@ -136,6 +150,8 @@ export function Pdv({ me, cash, reloadCash, readOnly }: Props) {
           Pagar {due > 0 ? brl(due) : ''}
         </button>
       </section>
+
+      {scanning && <BarcodeScanner onCode={onCamera} onClose={() => setScanning(false)} />}
 
       {paying && (
         <PaymentFlow

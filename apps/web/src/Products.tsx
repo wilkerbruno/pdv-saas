@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { brl, parseMoney } from './money';
 import { Variant, describeVariant } from './types';
+import { BarcodeScanner } from './BarcodeScanner';
 
 interface Category { id: string; name: string }
 interface ProductRow {
@@ -28,6 +29,7 @@ function QuickEntry() {
   const [newCode, setNewCode] = useState<string | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
 
@@ -49,8 +51,26 @@ function QuickEntry() {
     finally { setBusy(false); input.current?.focus(); }
   };
 
+  // Câmera: cada leitura soma a quantidade do campo "Qtd."; código novo fecha a câmera e abre o cadastro.
+  const onCamera = async (c: string) => {
+    const n = Math.max(1, parseInt(qty || '1', 10) || 1);
+    try {
+      const r = await api<{ found: boolean; variant?: Variant; added?: number; balance?: number }>('/stock/receive', { method: 'POST', body: { code: c, qty: n } });
+      if (r.found && r.variant) {
+        const name = describeVariant(r.variant);
+        setEntries((x) => [{ id: ++seq.current, name, added: r.added!, balance: r.balance! }, ...x].slice(0, 8));
+        setQty('1');
+        return `+${r.added} ${name} (estoque ${r.balance})`;
+      }
+      setScanning(false);
+      setNewCode(c);
+      return;
+    } catch (e) { return (e as Error).message; }
+  };
+
   return (
     <>
+      {scanning && <BarcodeScanner onCode={onCamera} onClose={() => setScanning(false)} />}
       <section className="card">
         <h2>Entrada rápida por código de barras</h2>
         <p className="muted small">Bipe o produto: se já estiver cadastrado, soma ao estoque (1 por bipe, ou a quantidade digitada ao lado). Se for novo, abre o cadastro.</p>
@@ -61,6 +81,7 @@ function QuickEntry() {
           </label>
           <button className="primary" disabled={busy || newCode !== null}>Adicionar</button>
         </form>
+        <button className="cam" disabled={newCode !== null} onClick={() => setScanning(true)}>📷 Ler com a câmera do celular</button>
         {err && <div className="error">{err}</div>}
         {entries.length > 0 && (
           <ul className="results">

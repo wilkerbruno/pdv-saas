@@ -67,3 +67,9 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
 .entry { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .prod { padding: 10px 0; border-bottom: 1px solid var(--line); display: grid; gap: 6px; }
 .vrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; } .vname { display: flex; flex-direction: column; min-width: 160px; flex: 1; }
+
+.cam { width: 100%; padding: 12px; font-size: 16px; }
+.scanner { position: fixed; inset: 0; z-index: 50; background: #000; display: flex; flex-direction: column; }
+.scanner video { flex: 1; width: 100%; object-fit: cover; min-height: 0; }
+.scan-frame { position: absolute; left: 10%; right: 10%; top: 30%; height: 28%; border: 3px solid #fff; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0,0,0,.35); pointer-events: none; }
+.scan-bar { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 14px 16px; background: #111; color: #fff; font-size: 15px; }
