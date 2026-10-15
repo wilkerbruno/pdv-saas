@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService, Tx } from '../prisma/prisma.service';
 import { resolveAccess } from '../common/access';
 import { RoleName } from '../common/types';
+import { isPlatformAdminEmail } from '../admin/admin-emails';
 import { CreateUserDto, LoginDto, RegisterDto } from './auth.dto';
 
 const TRIAL_DAYS = 14;
@@ -44,7 +45,7 @@ export class AuthService {
       return { tenant, user };
     });
 
-    return this.session(user.id, tenant.id, user.role as RoleName, user.name);
+    return this.session(user.id, tenant.id, user.role as RoleName, user.name, user.email);
   }
 
   async login(dto: LoginDto) {
@@ -52,7 +53,7 @@ export class AuthService {
     if (!user || !user.active || !(await bcrypt.compare(dto.password, user.passwordHash))) {
       throw new UnauthorizedException('E-mail ou senha inválidos');
     }
-    return this.session(user.id, user.tenantId, user.role as RoleName, user.name);
+    return this.session(user.id, user.tenantId, user.role as RoleName, user.name, user.email);
   }
 
   async me(userId: string, tenantId: string) {
@@ -64,7 +65,7 @@ export class AuthService {
       }),
     ]);
     if (!user || !tenant) throw new UnauthorizedException();
-    return { user, tenant: this.tenantView(tenant) };
+    return { user: { ...user, platformAdmin: isPlatformAdminEmail(user.email) }, tenant: this.tenantView(tenant) };
   }
 
   async createUser(tenantId: string, dto: CreateUserDto) {
@@ -86,10 +87,10 @@ export class AuthService {
     });
   }
 
-  private async session(userId: string, tenantId: string, role: RoleName, name: string) {
+  private async session(userId: string, tenantId: string, role: RoleName, name: string, email: string) {
     const token = await this.jwt.signAsync({ sub: userId, tid: tenantId, role });
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, include: { plan: true } });
-    return { token, user: { id: userId, name, role }, tenant: tenant ? this.tenantView(tenant) : null };
+    return { token, user: { id: userId, name, role, platformAdmin: isPlatformAdminEmail(email) }, tenant: tenant ? this.tenantView(tenant) : null };
   }
 
   private tenantView(t: {

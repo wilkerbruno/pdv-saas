@@ -93,3 +93,14 @@ Mercado Pago Point/PIX/OAuth, Focus NFe, Prisma/MySQL e o app Expo foram escrito
 
 ### Mensalidade (cobrança do SaaS)
 PIX gerado na conta Mercado Pago **da plataforma** (`PLATFORM_MP_ACCESS_TOKEN`). O dono paga em Configurações → Assinatura (ou na tela de conta bloqueada). O webhook `/billing/webhook/mercadopago` confere o pagamento na API, valida valor e referência e estende o período em 30 dias, uma única vez por cobrança. Cobrança é manual por ciclo (sem débito automático); o PIX vale 1 h. Configure o webhook de "Pagamentos" no painel do app da plataforma. Não testado com o Mercado Pago real.
+
+## Painel de administração da plataforma
+
+Tela exclusiva do dono do SaaS para controlar planos e assinaturas (menu **Administração**).
+
+1. Defina `PLATFORM_ADMIN_EMAILS=seu@email.com` (vários separados por vírgula) na API e reinicie.
+2. Crie/entre com uma conta com esse e-mail (ex.: cadastre-se normalmente pela tela de login). Só esses e-mails veem o menu e acessam `/admin/*` (a API reconfere a cada chamada).
+3. Abas: **Resumo** (MRR, recebido em 30 dias, lojas por status, testes acabando), **Assinaturas** (buscar/filtrar lojas; mudar status, plano, fim do teste, pago até, NFC-e; suspender/reativar/cancelar; liberar N dias por pagamento manual ou cortesia), **Planos** (criar/editar preço, limites, recursos e disponibilidade; planos não são apagados, apenas desativados), **Cobranças** (faturas PIX).
+4. Toda ação é registrada na tabela `AdminAction` (auditoria) e mostrada no histórico da loja. Mudanças valem na hora (o cache de acesso é invalidado).
+
+Após atualizar, aplique o schema (nova tabela `AdminAction`): `npx prisma db push` (o entrypoint do Docker já faz isso se estiver configurado assim).

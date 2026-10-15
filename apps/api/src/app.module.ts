@@ -14,6 +14,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { SalesModule } from './sales/sales.module';
 import { ReportsModule } from './reports/reports.module';
+import { AdminModule } from './admin/admin.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -38,6 +39,7 @@ import { HealthController } from './health.controller';
     FiscalModule,
     SalesModule,
     ReportsModule,
+    AdminModule,
   ],
   controllers: [HealthController],
   providers: [

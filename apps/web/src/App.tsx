@@ -5,13 +5,14 @@ import { Me } from './types';
 import { Pdv } from './Pdv';
 import { Products } from './Products';
 import { Reports } from './Reports';
+import { AdminPanel } from './AdminPanel';
 import { Settings } from './Settings';
 import { Subscription } from './Subscription';
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(hasToken());
-  const [view, setView] = useState<'pdv' | 'products' | 'reports' | 'settings'>('pdv');
+  const [view, setView] = useState<'pdv' | 'products' | 'reports' | 'settings' | 'admin'>('pdv');
   const [flash, setFlash] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [cash, setCash] = useState<{ session: { id: string; storeId: string } | null; balance?: { expectedCents: number } } | null>(null);
@@ -55,6 +56,8 @@ export function App() {
   const showSettings = view === 'settings' && me.user.role !== 'CASHIER' && !blocked;
   const showProducts = view === 'products' && me.user.role !== 'CASHIER' && !blocked;
   const showReports = view === 'reports' && me.user.role !== 'CASHIER' && !blocked;
+  const isAdmin = !!me.user.platformAdmin;
+  const showAdmin = view === 'admin' && isAdmin;
   const readOnly = me.tenant.access === 'READ_ONLY';
 
   return (
@@ -71,6 +74,7 @@ export function App() {
             ['products', 'Produtos', me.user.role !== 'CASHIER'],
             ['reports', 'Relatórios', me.user.role !== 'CASHIER'],
             ['settings', 'Configurações', me.user.role !== 'CASHIER'],
+            ['admin', 'Administração', isAdmin],
           ].filter(([, , show]) => show).map(([id, label]) => (
             <button key={id as string} className={view === id ? 'tab on' : 'tab'}
               onClick={() => { setView(id as typeof view); setMenuOpen(false); }}>{label as string}</button>
@@ -86,7 +90,9 @@ export function App() {
         <div className="banner info">Teste grátis até {new Date(me.tenant.trialEndsAt).toLocaleDateString('pt-BR')}.</div>
       )}
       {readOnly && <div className="banner warn">Assinatura em atraso: o sistema está em modo somente leitura. Regularize para voltar a vender.</div>}
-      {blocked ? (
+      {showAdmin ? (
+        <AdminPanel />
+      ) : blocked ? (
         <div className="center">
           <h2>Assinatura inativa</h2>
           <p className="muted">Regularize o pagamento da mensalidade para voltar a usar o PDV.</p>

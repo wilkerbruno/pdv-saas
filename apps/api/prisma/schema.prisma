@@ -66,6 +66,7 @@ model Tenant {
   fiscalDocuments   FiscalDocument[]
   billingInvoices   BillingInvoice[]
   oauthStates       OAuthState[]
+  adminActions      AdminAction[]
 }
 
 enum Role {
@@ -456,4 +457,19 @@ model BillingInvoice {
   createdAt     DateTime  @default(now())
 
   @@index([tenantId, status])
+}
+
+// Auditoria das ações do administrador da plataforma sobre assinaturas e planos.
+model AdminAction {
+  id         String   @id @default(cuid())
+  adminId    String
+  adminEmail String
+  tenantId   String?
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id])
+  action     String // TENANT_UPDATE | EXTEND | PLAN_CREATE | PLAN_UPDATE ...
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([createdAt])
 }

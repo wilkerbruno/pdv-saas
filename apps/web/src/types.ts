@@ -52,7 +52,7 @@ export interface Sale {
   payments: PaymentRow[];
 }
 export interface Me {
-  user: { id: string; name: string; email: string; role: 'OWNER' | 'MANAGER' | 'CASHIER' };
+  user: { id: string; name: string; email: string; role: 'OWNER' | 'MANAGER' | 'CASHIER'; platformAdmin?: boolean };
   tenant: {
     id: string;
     name: string;

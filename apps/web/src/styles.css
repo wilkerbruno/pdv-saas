@@ -102,3 +102,9 @@ input, select, textarea, button { max-width: 100%; }
 
 @media (max-width: 800px) { .qeform { flex-wrap: wrap; } .qeform .search { flex: 1 1 100%; } .qeform .qtybox { flex: 0 0 90px; } .qeform .primary { flex: 1; min-height: 44px; } }
 .pill { white-space: nowrap; flex-shrink: 0; }
+
+/* Painel de administração */
+.row.wrap { flex-wrap: wrap; }
+.list-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.list-item .right { text-align: right; flex-shrink: 0; }
+.card .row.between { gap: 8px; }
