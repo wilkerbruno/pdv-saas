@@ -117,7 +117,8 @@ export function Pdv({ me, cash, reloadCash, readOnly }: Props) {
               </div>
               <div className="qty">
                 <button onClick={() => setQty(l.variant.id, l.qty - 1)} aria-label="Diminuir">−</button>
-                <span>{l.qty}</span>
+                <input className="qtyinput" type="number" min={1} inputMode="numeric" value={l.qty} aria-label="Quantidade"
+                  onChange={(e) => { const n = parseInt(e.target.value, 10); if (Number.isInteger(n)) setQty(l.variant.id, n); }} />
                 <button onClick={() => setQty(l.variant.id, l.qty + 1)} aria-label="Aumentar">+</button>
               </div>
               <strong>{brl(l.variant.priceCents * l.qty)}</strong>

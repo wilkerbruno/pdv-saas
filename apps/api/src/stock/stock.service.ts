@@ -51,6 +51,22 @@ export class StockService {
     return this.prisma.$transaction((tx: Tx) => this.move(tx, { tenantId, variantId, type, qty, reason }));
   }
 
+  /**
+   * Entrada por leitura de código: se o código (barras ou SKU) já está cadastrado, soma `qty` ao estoque
+   * (padrão 1 por bipe); se não, devolve found:false para a tela abrir o cadastro com o código preenchido.
+   */
+  async receiveByCode(tenantId: string, code: string, qty = 1) {
+    const clean = code.trim();
+    if (!clean) throw new BadRequestException('Informe o código');
+    const variant = await this.prisma.productVariant.findFirst({
+      where: { tenantId, active: true, OR: [{ barcode: clean }, { sku: clean }] },
+      include: { product: { select: { id: true, name: true } } },
+    });
+    if (!variant) return { found: false as const };
+    const mv = await this.adjust(tenantId, variant.id, 'IN', qty, 'Entrada por leitura de código');
+    return { found: true as const, variant: { ...variant, stockQty: mv.balance }, added: qty, balance: mv.balance };
+  }
+
   movements(tenantId: string, variantId?: string) {
     return this.prisma.stockMovement.findMany({
       where: { tenantId, ...(variantId ? { variantId } : {}) },

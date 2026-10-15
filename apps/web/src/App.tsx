@@ -3,6 +3,7 @@ import { api, ApiError, hasToken, setToken } from './api';
 import { brl, parseMoney } from './money';
 import { Me } from './types';
 import { Pdv } from './Pdv';
+import { Products } from './Products';
 import { Reports } from './Reports';
 import { Settings } from './Settings';
 import { Subscription } from './Subscription';
@@ -10,7 +11,7 @@ import { Subscription } from './Subscription';
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(hasToken());
-  const [view, setView] = useState<'pdv' | 'reports' | 'settings'>('pdv');
+  const [view, setView] = useState<'pdv' | 'products' | 'reports' | 'settings'>('pdv');
   const [flash, setFlash] = useState('');
   const [cash, setCash] = useState<{ session: { id: string; storeId: string } | null; balance?: { expectedCents: number } } | null>(null);
 
@@ -51,6 +52,7 @@ export function App() {
 
   const blocked = me.tenant.access === 'BLOCKED';
   const showSettings = view === 'settings' && me.user.role !== 'CASHIER' && !blocked;
+  const showProducts = view === 'products' && me.user.role !== 'CASHIER' && !blocked;
   const showReports = view === 'reports' && me.user.role !== 'CASHIER' && !blocked;
   const readOnly = me.tenant.access === 'READ_ONLY';
 
@@ -65,6 +67,7 @@ export function App() {
           <button className={view === 'pdv' ? 'tab on' : 'tab'} onClick={() => setView('pdv')}>Vender</button>
           {me.user.role !== 'CASHIER' && (
             <>
+              <button className={view === 'products' ? 'tab on' : 'tab'} onClick={() => setView('products')}>Produtos</button>
               <button className={view === 'reports' ? 'tab on' : 'tab'} onClick={() => setView('reports')}>Relatórios</button>
               <button className={view === 'settings' ? 'tab on' : 'tab'} onClick={() => setView('settings')}>Configurações</button>
             </>
@@ -85,6 +88,8 @@ export function App() {
           <p className="muted">Regularize o pagamento da mensalidade para voltar a usar o PDV.</p>
           <Subscription me={me} onPaid={load} />
         </div>
+      ) : showProducts ? (
+        <Products />
       ) : showReports ? (
         <Reports />
       ) : showSettings ? (
