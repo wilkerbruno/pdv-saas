@@ -2,11 +2,12 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { CurrentUser, Roles } from '../common/decorators';
 import { AuthUser } from '../common/types';
 import { CatalogService } from './catalog.service';
+import { BarcodeLookupService } from './barcode-lookup.service';
 import { CreateCategoryDto, CreateProductDto, UpdateProductDto, UpdateVariantDto, VariantDto } from './catalog.dto';
 
 @Controller()
 export class CatalogController {
-  constructor(private catalog: CatalogService) {}
+  constructor(private catalog: CatalogService, private barcodes: BarcodeLookupService) {}
 
   @Get('categories') categories(@CurrentUser() u: AuthUser) {
     return this.catalog.categories(u.tenantId);
@@ -15,6 +16,15 @@ export class CatalogController {
   @Roles('OWNER', 'MANAGER') @Post('categories')
   createCategory(@CurrentUser() u: AuthUser, @Body() dto: CreateCategoryDto) {
     return this.catalog.createCategory(u.tenantId, dto);
+  }
+
+  /** Dados públicos do produto pelo código de barras, para pré-preencher o cadastro (o usuário confere antes de salvar). */
+  @Roles('OWNER', 'MANAGER') @Get('barcode-info')
+  async barcodeInfo(@CurrentUser() u: AuthUser, @Query('code') code = '') {
+    const gtin = code.replace(/\D/g, '');
+    const exists = gtin ? await this.catalog.lookup(u.tenantId, gtin).then(() => true, () => false) : false;
+    if (exists) return { found: false, gtin, alreadyRegistered: true };
+    return this.barcodes.lookup(gtin);
   }
 
   @Get('products')

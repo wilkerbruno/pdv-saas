@@ -120,7 +120,25 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
   useEffect(() => { api<Category[]>('/categories').then(setCats).catch(() => undefined); }, []);
-  useEffect(() => { (initialCode ? nameRef : nameRef).current?.focus(); }, [initialCode]);
+  useEffect(() => { nameRef.current?.focus(); }, [initialCode]);
+
+  // Busca automática dos dados pelo código de barras (só preenche campos ainda vazios).
+  const [info, setInfo] = useState<{ state: 'idle' | 'busy' | 'found' | 'none' | 'dup' | 'error'; source?: string; imageUrl?: string; avg?: number }>({ state: 'idle' });
+  const lastLooked = useRef('');
+  const lookup = useCallback(async (raw: string) => {
+    const code = raw.replace(/\D/g, '');
+    if (![8, 12, 13, 14].includes(code.length) || code === lastLooked.current) return;
+    lastLooked.current = code;
+    setInfo({ state: 'busy' });
+    try {
+      const r = await api<{ found: boolean; alreadyRegistered?: boolean; source?: string; name?: string; ncm?: string; imageUrl?: string; avgPriceCents?: number }>(`/barcode-info?code=${code}`);
+      if (r.alreadyRegistered) return setInfo({ state: 'dup' });
+      if (!r.found) return setInfo({ state: 'none' });
+      setF((cur) => ({ ...cur, name: cur.name.trim() ? cur.name : (r.name ?? ''), ncm: cur.ncm.trim() ? cur.ncm : (r.ncm ?? '') }));
+      setInfo({ state: 'found', source: r.source, imageUrl: r.imageUrl, avg: r.avgPriceCents });
+    } catch { lastLooked.current = ''; setInfo({ state: 'error' }); }
+  }, []);
+  useEffect(() => { if (initialCode) void lookup(initialCode); }, [initialCode, lookup]);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,8 +176,8 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
       <form onSubmit={save} className="settings" style={{ padding: 0 }}>
         <div className="grid2">
           <label>Código de barras
-            <input value={f.barcode} onChange={set('barcode')} inputMode="numeric"
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); nameRef.current?.focus(); } }} />
+            <input value={f.barcode} onChange={set('barcode')} inputMode="numeric" onBlur={(e) => void lookup(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void lookup(f.barcode); nameRef.current?.focus(); } }} />
           </label>
           <label>Nome *<input ref={nameRef} value={f.name} onChange={set('name')}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); priceRef.current?.focus(); } }} /></label>
@@ -178,6 +196,17 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
           <label>SKU (opcional)<input value={f.sku} onChange={set('sku')} /></label>
           <label>NCM (para nota fiscal)<input value={f.ncm} onChange={set('ncm')} inputMode="numeric" maxLength={10} placeholder="8 dígitos" /></label>
         </div>
+        {info.state === 'busy' && <p className="muted small">Buscando dados do produto…</p>}
+        {info.state === 'found' && (
+          <div className="row gap small" style={{ alignItems: 'center' }}>
+            {info.imageUrl && <img src={info.imageUrl} alt="" style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 8 }} />}
+            <span className="muted">Dados preenchidos automaticamente ({info.source === 'cosmos' ? 'Cosmos' : 'Open Food Facts'}). Confira nome e NCM antes de salvar.
+              {info.avg ? ` Preço médio de mercado: ${brl(info.avg)}.` : ''}</span>
+          </div>
+        )}
+        {info.state === 'none' && <p className="muted small">Produto não encontrado nas bases públicas. Preencha manualmente.</p>}
+        {info.state === 'dup' && <p className="error">Este código já está cadastrado na sua loja.</p>}
+        {info.state === 'error' && <p className="muted small">Não foi possível consultar agora. Preencha manualmente.</p>}
         {err && <div className="error">{err}</div>}
         <div className="row gap">
           <button className="primary" disabled={busy}>Salvar produto</button>

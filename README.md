@@ -104,3 +104,7 @@ Tela exclusiva do dono do SaaS para controlar planos e assinaturas (menu **Admin
 4. Toda ação é registrada na tabela `AdminAction` (auditoria) e mostrada no histórico da loja. Mudanças valem na hora (o cache de acesso é invalidado).
 
 Após atualizar, aplique o schema (nova tabela `AdminAction`): `npx prisma db push` (o entrypoint do Docker já faz isso se estiver configurado assim).
+
+## Cadastro de produto por código de barras
+
+Ao digitar/bipar um código que ainda não existe na loja, a tela de novo produto consulta bases públicas e preenche nome e NCM (só campos vazios; o lojista confere antes de salvar). Fontes, em ordem: **Cosmos Bluesoft** (defina `COSMOS_API_TOKEN`; melhor cobertura de produtos brasileiros e traz NCM) e **Open Food Facts / Beauty / Products Facts** (grátis, sem chave, mais forte em alimentos e cosméticos). O código é validado (dígito verificador GS1) antes de consultar; resultados ficam em cache por 24 h e falhas de rede não são guardadas como "não existe". Se nenhuma fonte confirmar, nada é inventado: o cadastro segue manual.
