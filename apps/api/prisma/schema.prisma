@@ -135,6 +135,8 @@ model Product {
   cest        String?
   origin      Int       @default(0)
   taxCode     String? // CSOSN/CST
+  hasImage    Boolean   @default(false)
+  image       ProductImage?
   active      Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -472,4 +474,13 @@ model AdminAction {
 
   @@index([tenantId])
   @@index([createdAt])
+}
+
+// Foto do produto (guardada no banco, em tabela separada para não pesar nas listagens).
+model ProductImage {
+  productId String   @id
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  mime      String
+  data      Bytes    @db.LongBlob
+  createdAt DateTime @default(now())
 }

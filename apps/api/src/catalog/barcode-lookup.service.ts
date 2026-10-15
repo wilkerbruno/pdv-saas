@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { BarcodeInfo, isValidGtin, parseCosmos, parseOpenFacts, parseSi5, parseUpcItemDb } from './barcode-lookup';
+import { randomBytes } from 'crypto';
+import { BarcodeInfo, checkImage, isSafeImageUrl, isValidGtin, parseCosmos, parseOpenFacts, parseSi5, parseUpcItemDb } from './barcode-lookup';
 
 const UA = 'PDV-SaaS/1.0 (cadastro de produtos)';
 const OPEN_HOSTS: [NonNullable<BarcodeInfo['source']>, string][] = [
@@ -12,6 +13,40 @@ const OPEN_HOSTS: [NonNullable<BarcodeInfo['source']>, string][] = [
 export class BarcodeLookupService {
   private log = new Logger(BarcodeLookupService.name);
   private cache = new Map<string, { until: number; info: BarcodeInfo }>();
+  /** Fotos já baixadas aguardando o salvamento do produto (token → bytes), 30 min, presas à loja que consultou. */
+  private pending = new Map<string, { tenantId: string; mime: string; data: Buffer; until: number }>();
+
+  /** Baixa a foto no servidor e devolve um token para o cadastro anexá-la. O cliente nunca informa URL (sem SSRF). */
+  async prepareImage(tenantId: string, imageUrl?: string): Promise<string | undefined> {
+    if (!imageUrl || !isSafeImageUrl(imageUrl)) return undefined;
+    try {
+      const res = await fetch(imageUrl, { headers: { 'User-Agent': UA, Accept: 'image/*' }, signal: AbortSignal.timeout(8000), redirect: 'follow' });
+      if (!res.ok || !isSafeImageUrl(res.url || imageUrl)) return undefined;
+      const len = Number(res.headers.get('content-length') ?? 0);
+      if (len > 1_500_000) return undefined;
+      const data = Buffer.from(await res.arrayBuffer());
+      const mime = checkImage(res.headers.get('content-type') ?? '', data);
+      if (!mime) return undefined;
+      const now = Date.now();
+      for (const [k, v] of this.pending) if (v.until < now) this.pending.delete(k);
+      if (this.pending.size >= 200) this.pending.delete(this.pending.keys().next().value as string);
+      const token = randomBytes(18).toString('hex');
+      this.pending.set(token, { tenantId, mime, data, until: now + 30 * 60_000 });
+      return token;
+    } catch (e) {
+      this.log.warn(`Não foi possível baixar a foto do produto: ${(e as Error).message}`);
+      return undefined;
+    }
+  }
+
+  /** Consome o token (uso único) se pertencer à loja. */
+  takeImage(tenantId: string, token?: string): { mime: string; data: Buffer } | undefined {
+    if (!token) return undefined;
+    const hit = this.pending.get(token);
+    if (!hit || hit.tenantId !== tenantId || hit.until < Date.now()) return undefined;
+    this.pending.delete(token);
+    return { mime: hit.mime, data: hit.data };
+  }
 
   /** Fontes, em ordem: Cosmos (COSMOS_API_TOKEN, pago), SI5 Global (SI5_API_TOKEN, grátis 100/dia, traz NCM), Open *Facts e UPCitemdb (sem chave). */
   async lookup(rawCode: string): Promise<BarcodeInfo> {

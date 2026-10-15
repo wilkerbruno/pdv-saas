@@ -82,3 +82,34 @@ export function parseUpcItemDb(gtin: string, j: any): BarcodeInfo {
     imageUrl: (Array.isArray(it.images) && typeof it.images[0] === 'string' ? it.images[0] : '') || undefined,
   };
 }
+
+export const MAX_IMAGE_BYTES = 1_500_000;
+const IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+/** Só https e nunca endereços locais/privados (evita que uma resposta externa faça o servidor acessar a rede interna). */
+export function isSafeImageUrl(raw: string): boolean {
+  let u: URL;
+  try { u = new URL(raw); } catch { return false; }
+  if (u.protocol !== 'https:') return false;
+  const h = u.hostname.toLowerCase();
+  if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal') || !h.includes('.')) return false;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) {
+    const [a, b] = h.split('.').map(Number);
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return false;
+  }
+  if (h.includes(':') || h.startsWith('[')) return false; // IPv6 literal
+  return true;
+}
+
+/** Aceita só JPEG/PNG/WEBP/GIF (nunca SVG) dentro do limite de tamanho; confere a assinatura do arquivo. */
+export function checkImage(mime: string, bytes: Uint8Array): string | null {
+  const m = mime.split(';')[0].trim().toLowerCase();
+  if (!IMAGE_MIMES.includes(m) || bytes.length < 12 || bytes.length > MAX_IMAGE_BYTES) return null;
+  const hex = Buffer.from(bytes.slice(0, 12)).toString('hex');
+  const ok =
+    (m === 'image/jpeg' && hex.startsWith('ffd8ff')) ||
+    (m === 'image/png' && hex.startsWith('89504e47')) ||
+    (m === 'image/gif' && hex.startsWith('47494638')) ||
+    (m === 'image/webp' && hex.startsWith('52494646') && hex.slice(16, 24) === '57454250');
+  return ok ? m : null;
+}

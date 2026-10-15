@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from './api';
+import { api, BASE } from './api';
 import { brl, parseMoney } from './money';
 import { Variant, describeVariant } from './types';
 import { BarcodeScanner } from './BarcodeScanner';
 
 interface Category { id: string; name: string }
 interface ProductRow {
-  id: string; name: string; ncm?: string | null; category?: { name: string } | null;
+  id: string; hasImage?: boolean; name: string; ncm?: string | null; category?: { name: string } | null;
   variants: (Variant & { minStock?: number })[];
 }
 interface Entry { id: number; name: string; added: number; balance: number }
@@ -123,7 +123,7 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
   useEffect(() => { nameRef.current?.focus(); }, [initialCode]);
 
   // Busca automática dos dados pelo código de barras (só preenche campos ainda vazios).
-  const [info, setInfo] = useState<{ state: 'idle' | 'busy' | 'found' | 'none' | 'dup' | 'error'; notes?: string[]; source?: string; imageUrl?: string; avg?: number }>({ state: 'idle' });
+  const [info, setInfo] = useState<{ state: 'idle' | 'busy' | 'found' | 'none' | 'dup' | 'error'; notes?: string[]; source?: string; imageUrl?: string; imageToken?: string; avg?: number }>({ state: 'idle' });
   const lastLooked = useRef('');
   const lookup = useCallback(async (raw: string) => {
     const code = raw.replace(/\D/g, '');
@@ -131,11 +131,11 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
     lastLooked.current = code;
     setInfo({ state: 'busy' });
     try {
-      const r = await api<{ found: boolean; alreadyRegistered?: boolean; source?: string; name?: string; ncm?: string; imageUrl?: string; avgPriceCents?: number; notes?: string[] }>(`/barcode-info?code=${code}`);
+      const r = await api<{ found: boolean; alreadyRegistered?: boolean; source?: string; name?: string; ncm?: string; imageUrl?: string; avgPriceCents?: number; imageToken?: string; notes?: string[] }>(`/barcode-info?code=${code}`);
       if (r.alreadyRegistered) return setInfo({ state: 'dup' });
       if (!r.found) return setInfo({ state: 'none', notes: r.notes });
       setF((cur) => ({ ...cur, name: cur.name.trim() ? cur.name : (r.name ?? ''), ncm: cur.ncm.trim() ? cur.ncm : (r.ncm ?? '') }));
-      setInfo({ state: 'found', source: r.source, imageUrl: r.imageUrl, avg: r.avgPriceCents });
+      setInfo({ state: 'found', source: r.source, imageUrl: r.imageUrl, imageToken: r.imageToken, avg: r.avgPriceCents });
     } catch (e) { lastLooked.current = ''; setInfo({ state: 'error', notes: [(e as Error).message] }); }
   }, []);
   useEffect(() => { if (initialCode) void lookup(initialCode); }, [initialCode, lookup]);
@@ -158,6 +158,7 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
         name: f.name.trim(),
         ...(f.categoryId ? { categoryId: f.categoryId } : {}),
         ...(f.ncm.replace(/\D/g, '') ? { ncm: f.ncm.replace(/\D/g, '') } : {}),
+        ...(info.state === 'found' && info.imageToken ? { imageToken: info.imageToken } : {}),
         variants: [{
           ...(f.barcode.trim() ? { barcode: f.barcode.trim() } : {}),
           ...(f.sku.trim() ? { sku: f.sku.trim() } : {}),
@@ -200,7 +201,7 @@ function NewProduct({ initialCode, onCancel, onCreated }: { initialCode: string;
         {info.state === 'found' && (
           <div className="row gap small" style={{ alignItems: 'center' }}>
             {info.imageUrl && <img src={info.imageUrl} alt="" style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 8 }} />}
-            <span className="muted">Dados preenchidos automaticamente ({({ cosmos: 'Cosmos', si5: 'SI5 Global', upcitemdb: 'UPCitemdb' } as Record<string, string>)[info.source ?? ''] ?? 'Open Food Facts'}). Confira nome e NCM antes de salvar.
+            <span className="muted">Dados preenchidos automaticamente ({({ cosmos: 'Cosmos', si5: 'SI5 Global', upcitemdb: 'UPCitemdb' } as Record<string, string>)[info.source ?? ''] ?? 'Open Food Facts'}). Confira nome e NCM antes de salvar.{info.imageToken ? ' A foto será salva com o produto.' : ''}
               {info.avg ? ` Preço médio de mercado: ${brl(info.avg)}.` : ''}</span>
           </div>
         )}
@@ -241,6 +242,7 @@ function ProductList() {
       {items.length === 0 && !err && <p className="muted small">Nenhum produto encontrado.</p>}
       {items.map((p) => (
         <div key={p.id} className="prod">
+          {p.hasImage && <img src={`${BASE}/products/${p.id}/image`} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 8, verticalAlign: 'middle', marginRight: 8 }} />}
           <strong>{p.name}</strong>
           {p.category && <span className="muted small"> · {p.category.name}</span>}
           {p.variants.map((v) => <VariantRow key={v.id} v={v} onSaved={load} />)}

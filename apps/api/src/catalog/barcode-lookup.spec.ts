@@ -1,4 +1,4 @@
-import { isValidGtin, parseCosmos, parseOpenFacts, parseSi5, parseUpcItemDb } from './barcode-lookup';
+import { checkImage, isSafeImageUrl, isValidGtin, parseCosmos, parseOpenFacts, parseSi5, parseUpcItemDb } from './barcode-lookup';
 
 describe('isValidGtin', () => {
   it('aceita EANs válidos e rejeita dígito errado/tamanho/não numérico', () => {
@@ -48,5 +48,22 @@ describe('parseUpcItemDb', () => {
     expect(parseUpcItemDb('1', { code: 'OK', items: [{ title: 'Some Product', brand: 'Acme', images: ['https://i/1.jpg'] }] })).toMatchObject({ found: true, source: 'upcitemdb', name: 'Some Product', brand: 'Acme' });
     expect(parseUpcItemDb('1', { code: 'OK', items: [] }).found).toBe(false);
     expect(parseUpcItemDb('1', { code: 'INVALID_UPC' }).found).toBe(false);
+  });
+});
+
+describe('foto do produto', () => {
+  it('isSafeImageUrl bloqueia http, localhost e IPs privados', () => {
+    expect(isSafeImageUrl('https://cdn.si5.com.br/a.png')).toBe(true);
+    for (const u of ['http://x.com/a.png', 'https://localhost/a', 'https://127.0.0.1/a', 'https://10.0.0.5/a', 'https://192.168.1.2/a', 'https://169.254.169.254/x', 'https://172.20.0.1/a', 'https://[::1]/a', 'https://intranet/a', 'nao-url'])
+      expect(isSafeImageUrl(u)).toBe(false);
+  });
+  it('checkImage confere tipo, assinatura e tamanho; rejeita SVG', () => {
+    const png = Buffer.from('89504e470d0a1a0a0000000d', 'hex');
+    const jpg = Buffer.from('ffd8ffe000104a4649460001', 'hex');
+    expect(checkImage('image/png', png)).toBe('image/png');
+    expect(checkImage('image/jpeg; charset=x', jpg)).toBe('image/jpeg');
+    expect(checkImage('image/png', jpg)).toBeNull(); // assinatura não bate
+    expect(checkImage('image/svg+xml', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toBeNull();
+    expect(checkImage('image/png', Buffer.concat([png, Buffer.alloc(1_600_000)]))).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService, Tx } from '../prisma/prisma.service';
+import { BarcodeLookupService } from './barcode-lookup.service';
 import { CreateCategoryDto, CreateProductDto, UpdateProductDto, UpdateVariantDto, VariantDto } from './catalog.dto';
 
 @Injectable()
 export class CatalogService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private barcodes: BarcodeLookupService) {}
 
   categories(tenantId: string) {
     return this.prisma.category.findMany({ where: { tenantId }, orderBy: { name: 'asc' } });
@@ -19,8 +20,10 @@ export class CatalogService {
   async createProduct(tenantId: string, dto: CreateProductDto) {
     await this.assertUniqueCodes(tenantId, dto.variants);
     return this.prisma.$transaction(async (tx: Tx) => {
-      const { variants, ...data } = dto;
-      const product = await tx.product.create({ data: { tenantId, ...data } });
+      const { variants, imageToken, ...data } = dto;
+      const image = this.barcodes.takeImage(tenantId, imageToken);
+      const product = await tx.product.create({ data: { tenantId, ...data, hasImage: !!image } });
+      if (image) await tx.productImage.create({ data: { productId: product.id, mime: image.mime, data: image.data } });
       for (const v of variants) {
         const variant = await tx.productVariant.create({
           data: {
@@ -43,6 +46,12 @@ export class CatalogService {
       }
       return tx.product.findUnique({ where: { id: product.id }, include: { variants: true } });
     });
+  }
+
+  async productImage(id: string) {
+    const img = await this.prisma.productImage.findUnique({ where: { productId: id } });
+    if (!img) throw new NotFoundException('Sem foto');
+    return img;
   }
 
   async listProducts(tenantId: string, q?: string, page = 1, pageSize = 30) {

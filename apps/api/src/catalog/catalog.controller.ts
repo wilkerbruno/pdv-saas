@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { CurrentUser, Roles } from '../common/decorators';
+import { Body, Controller, Get, Param, Patch, Post, Query, Res, StreamableFile } from '@nestjs/common';
+import { CurrentUser, Public, Roles } from '../common/decorators';
 import { AuthUser } from '../common/types';
 import { CatalogService } from './catalog.service';
 import { BarcodeLookupService } from './barcode-lookup.service';
@@ -24,7 +24,23 @@ export class CatalogController {
     const gtin = code.replace(/\D/g, '');
     const exists = gtin ? await this.catalog.lookup(u.tenantId, gtin).then(() => true, () => false) : false;
     if (exists) return { found: false, gtin, alreadyRegistered: true };
-    return this.barcodes.lookup(gtin);
+    const info = await this.barcodes.lookup(gtin);
+    if (!info.found || !info.imageUrl) return info;
+    return { ...info, imageToken: await this.barcodes.prepareImage(u.tenantId, info.imageUrl) };
+  }
+
+  /** Foto do produto. Pública porque <img> não envia o token; o id é um cuid imprevisível e a foto não é sensível. */
+  @Public() @Get('products/:id/image')
+  async image(@Param('id') id: string, @Res({ passthrough: true }) res: any) {
+    const img = await this.catalog.productImage(id);
+    res.set({
+      'Content-Type': img.mime,
+      'Cache-Control': 'public, max-age=86400',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'",
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    });
+    return new StreamableFile(Buffer.from(img.data));
   }
 
   @Get('products')

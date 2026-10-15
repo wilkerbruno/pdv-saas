@@ -21,6 +21,8 @@ export class CreateProductDto {
   @IsOptional() @IsString() cfop?: string;
   @IsOptional() @IsString() cest?: string;
   @IsOptional() @IsString() taxCode?: string;
+  /** Token devolvido por GET /barcode-info para anexar a foto encontrada. */
+  @IsOptional() @IsString() imageToken?: string;
   @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => VariantDto)
   variants: VariantDto[];
 }
