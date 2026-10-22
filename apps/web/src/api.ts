@@ -1,4 +1,13 @@
-export const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
+declare global {
+  interface Window {
+    __APP_CONFIG__?: { VITE_API_URL?: string };
+  }
+}
+
+const runtimeApiUrl = typeof window !== 'undefined' ? window.__APP_CONFIG__?.VITE_API_URL : undefined;
+
+export const BASE =
+  runtimeApiUrl || (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:3000';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
