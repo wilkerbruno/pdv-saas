@@ -24,7 +24,7 @@ export class CatalogService {
       const { variants, imageToken, ...data } = dto;
       const image = this.barcodes.takeImage(tenantId, imageToken);
       const product = await tx.product.create({ data: { tenantId, ...data, hasImage: !!image } });
-      if (image) await tx.productImage.create({ data: { productId: product.id, mime: image.mime, data: image.data } });
+      if (image) await tx.productImage.create({ data: { productId: product.id, mime: image.mime, data: new Uint8Array(image.data) } });
       for (const v of variants) {
         const variant = await tx.productVariant.create({
           data: {
@@ -95,8 +95,8 @@ export class CatalogService {
       if (image) {
         await tx.productImage.upsert({
           where: { productId: id },
-          create: { productId: id, mime: image.mime, data: image.data },
-          update: { mime: image.mime, data: image.data },
+          create: { productId: id, mime: image.mime, data: new Uint8Array(image.data) },
+          update: { mime: image.mime, data: new Uint8Array(image.data) },
         });
         (data as any).hasImage = true;
       } else if (removeImage) {
@@ -110,9 +110,10 @@ export class CatalogService {
   /** Envio manual de foto (o navegador já reduz a imagem). */
   async setImage(tenantId: string, id: string, mime: string, base64: string) {
     await this.getProduct(tenantId, id);
-    const data = Buffer.from(base64, 'base64');
-    const okMime = checkImage(mime, data);
+    const buf = Buffer.from(base64, 'base64');
+    const okMime = checkImage(mime, buf);
     if (!okMime) throw new BadRequestException('Imagem inválida: use JPG, PNG, WEBP ou GIF de até 1,5 MB');
+    const data = new Uint8Array(buf);
     await this.prisma.$transaction(async (tx: Tx) => {
       await tx.productImage.upsert({ where: { productId: id }, create: { productId: id, mime: okMime, data }, update: { mime: okMime, data } });
       await tx.product.update({ where: { id }, data: { hasImage: true } });
