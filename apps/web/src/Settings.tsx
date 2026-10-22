@@ -8,10 +8,87 @@ export function Settings({ me, onChanged }: { me: Me; onChanged: () => void }) {
   return (
     <main className="settings">
       <Subscription me={me} onPaid={onChanged} />
+      <Employees me={me} />
       <MercadoPago me={me} />
       <Installments />
       <Fiscal me={me} onChanged={onChanged} />
     </main>
+  );
+}
+
+// ───────────────────────── Funcionários ─────────────────────────
+
+interface Employee { id: string; name: string; email: string; role: 'OWNER' | 'MANAGER' | 'CASHIER'; active: boolean }
+
+const ROLE_LABEL: Record<Employee['role'], string> = { OWNER: 'Dono', MANAGER: 'Gerente', CASHIER: 'Caixa' };
+
+function Employees({ me }: { me: Me }) {
+  const [list, setList] = useState<Employee[] | null>(null);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'MANAGER' | 'CASHIER'>('CASHIER');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const isOwner = me.user.role === 'OWNER';
+
+  const load = useCallback(async () => {
+    try { setList(await api<Employee[]>('/users')); } catch (e) { setErr((e as Error).message); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const create = async () => {
+    setErr(''); setMsg('');
+    try {
+      await api('/users', { method: 'POST', body: { name, email, password, role } });
+      setName(''); setEmail(''); setPassword(''); setRole('CASHIER');
+      setMsg('Funcionário cadastrado.');
+      await load();
+    } catch (e) { setErr((e as Error).message); }
+  };
+
+  return (
+    <section className="card">
+      <h2>Funcionários</h2>
+      <p className="muted small">
+        Caixa só acessa a tela de venda. Gerente acessa produtos, relatórios e configurações, mas não pode cadastrar outro gerente nem mexer em
+        Mercado Pago/fiscal. Só o dono tem acesso total.
+      </p>
+
+      {list?.map((u) => (
+        <div key={u.id} className="list-item">
+          <div><strong>{u.name}</strong><div className="muted small">{u.email}</div></div>
+          <div className="right small">
+            <span className={u.active ? 'pill ok' : 'pill bad'}>{ROLE_LABEL[u.role]}</span>
+            {!u.active && <div className="muted">Inativo</div>}
+          </div>
+        </div>
+      ))}
+      {list && list.length === 0 && <p className="muted">Nenhum funcionário cadastrado ainda.</p>}
+
+      {isOwner || me.user.role === 'MANAGER' ? (
+        <>
+          <h3>Novo funcionário</h3>
+          <div className="grid2">
+            <label>Nome<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+            <label>E-mail<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+            <label>Senha<input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+            <label>Cargo
+              <select value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
+                <option value="CASHIER">Caixa</option>
+                {isOwner && <option value="MANAGER">Gerente</option>}
+              </select>
+            </label>
+          </div>
+          <button className="primary" disabled={name.length < 2 || !email || password.length < 8}
+            onClick={create}>
+            Cadastrar
+          </button>
+        </>
+      ) : null}
+      {msg && <div className="banner info">{msg}</div>}
+      {err && <div className="error">{err}</div>}
+    </section>
   );
 }
 
